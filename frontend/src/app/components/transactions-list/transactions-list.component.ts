@@ -82,6 +82,7 @@ export class TransactionsListComponent implements OnInit, OnChanges, OnDestroy {
   signaturesPreference: SignaturesMode = null;
   signaturesOverride: SignaturesMode = null;
   signaturesMode: SignaturesMode = 'interesting';
+  showColdcardWarning: boolean = false;
 
   constructor(
     public stateService: StateService,
@@ -103,6 +104,7 @@ export class TransactionsListComponent implements OnInit, OnChanges, OnDestroy {
     this.networkSubscription = this.stateService.networkChanged$.subscribe((network) => {
       this.network = network;
       this.isLiquid = network === 'liquid' || network === 'liquidtestnet';
+      this.updateShowColdcardWarning();
     });
 
     this.signaturesSubscription = this.stateService.signaturesMode$.subscribe((mode) => {
@@ -188,6 +190,7 @@ export class TransactionsListComponent implements OnInit, OnChanges, OnDestroy {
     });
 
     this.updateAddressSimilarities();
+    this.updateShowColdcardWarning();
   }
 
   refreshPrice(): void {
@@ -229,6 +232,7 @@ export class TransactionsListComponent implements OnInit, OnChanges, OnDestroy {
     if (changes.transactions || changes.addresses) {
       this.similarityMatches.clear();
       this.updateAddressSimilarities();
+      this.updateShowColdcardWarning();
       if (!this.transactions || !this.transactions.length) {
         return;
       }
@@ -713,6 +717,32 @@ export class TransactionsListComponent implements OnInit, OnChanges, OnDestroy {
       default:
         return false;
     }
+  }
+
+  updateShowColdcardWarning(): void {
+    this.showColdcardWarning = false;
+
+    if (!this.transactions || !this.transactions.length || this.transactions.length > 1) {
+      return;
+    }
+
+    // diff than mainnet
+    if (this.network !== '') {
+      return;
+    }
+
+    if (this.transactions[0].status.confirmed) {
+      return;
+    }
+
+    if (!this.transactionPage || this.txPreview) {
+      return;
+    }
+
+    this.showColdcardWarning = this.transactions[0].vin.some((input: Vin) => {
+      const addressTypeInfo = new AddressTypeInfo(this.network || 'mainnet', input.prevout?.scriptpubkey_address, input.prevout?.scriptpubkey_type as AddressType, [input]);
+      return ['p2sh', 'v0_p2wsh', 'p2sh-p2wsh'].includes(addressTypeInfo.type) && !!addressTypeInfo.isMultisig;
+    });
   }
 
   ngOnDestroy(): void {
