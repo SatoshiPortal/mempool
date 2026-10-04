@@ -220,6 +220,7 @@ class Server {
 
     if (config.MEMPOOL.ENABLED) {
       void this.runMainUpdateLoop();
+      indexer.scheduleSingleTask('poolsStats', 0);
     }
 
     setInterval(() => { this.healthCheck(); }, 2500);
@@ -284,6 +285,7 @@ class Server {
       const minFeeTip = memPool.limitGBT ? await bitcoinSecondClient.getBlockCount() : -1;
       const latestAccelerations = await accelerationApi.$updateAccelerations();
       const numHandledBlocks = await blocks.$updateBlocks();
+      await poolsUpdater.$recheckBlocks();
       const pollRate = config.MEMPOOL.POLL_RATE_MS * (indexer.indexerIsRunning() ? 10 : 1);
       if (numHandledBlocks === 0) {
         await memPool.$updateMempool(newMempool, latestAccelerations, minFeeMempool, minFeeTip, pollRate);
@@ -349,13 +351,17 @@ class Server {
     }
 
     if (Common.isLiquid() && config.DATABASE.ENABLED) {
-      blocks.setNewBlockCallback(async () => {
+      /** @asyncSafe */
+      const parseElements = async (): Promise<void> => {
         try {
           await elementsParser.$parse();
         } catch (e) {
           logger.warn('Elements parsing error: ' + (e instanceof Error ? e.message : e));
         }
-      });
+      };
+      blocks.setNewBlockCallback(parseElements);
+      void parseElements();
+      setInterval(() => { void parseElements(); }, 60_000);
     }
     websocketHandler.setupConnectionHandling();
     if (config.MEMPOOL.ENABLED) {
